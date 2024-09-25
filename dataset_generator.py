@@ -46,18 +46,14 @@ class ChatDataLoader(object):
         self.client_id = -1
         return None
 
-
     def calculate_time(self):
         """
         ins: the next conversation to send, read speed and type speed
         outs: per conversation time to send next information
         """
-        next_send= [self.active_sessions[idx] for]
-        next_recv= [self.active_sessions.pop(0)]
-        
-        time_required_to_type = [
-        time_required_to_read = 
-         
+        next_send = [self.active_sessions[idx]]
+        next_recv = [self.active_sessions.pop(0)]
+
         return None
 
     def send_data(self):
@@ -67,16 +63,20 @@ class ChatDataLoader(object):
 
         # get the conversations in the list for client id
         self.active_sessions.extend(
-            [(client_id+1, self.open_data.pop(0)['conversations'] for _ in range(self.num_current_clients))]
+            [
+                (client_id + 1, self.open_data.pop(0)["conversations"])
+                for _ in range(self.num_current_clients)
+            ]
         )
+        import ipdb
 
-        # send RPC calls 
+        ipdb.set_trace()
+        # send RPC calls
 
-        # decide when to send the next request 
+        # decide when to send the next request
         # the logic for this is  - time to read the recieved output from LLM + time to type next query
-        self.active_sessions.
 
 
-if __name__=="__main__":
-
-
+if __name__ == "__main__":
+    dataloader = ChatDataLoader(10, 10, 10, 10, 10, 10)
+    dataloader.send_data()
