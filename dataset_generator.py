@@ -69,6 +69,10 @@ class ChatDataLoader(object):
             ]
         )
 
+        import ipdb
+
+        ipdb.set_trace()
+
         # send RPC calls
 
         # decide when to send the next request
