@@ -25,16 +25,16 @@ class ChatDataLoader(object):
         self.normal_distribution = np.random.default_rng()
         # this is potentially wrong need to switch to random int within a min and max
         self.num_current_clients = int(
-            self.normal_distribution(
+            self.normal_distribution.normal(
                 self.mean_concurrent_users, self.deviation_concurrent_users
             )
         )
         # numbers of word read
-        self.words_read_per_minute = self.normal_distribution(
+        self.words_read_per_minute = self.normal_distribution.normal(
             self.mean_read_rate, self.deviation_read_rate, size=self.num_current_clients
         )
         # number of words typed
-        self.words_types_per_minute = self.normal_distribution(
+        self.words_types_per_minute = self.normal_distribution.normal(
             self.mean_type_rate, self.deviation_type_rate, size=self.num_current_clients
         )
 
