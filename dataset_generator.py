@@ -43,7 +43,7 @@ class ChatDataLoader(object):
         # a list which contains active connections
         self.active_sessions = list()
         self.time_delta_next_req = dict()
-        self.client_id = -1
+        self.client_id = 0
         return None
 
     def calculate_time(self):
@@ -64,13 +64,11 @@ class ChatDataLoader(object):
         # get the conversations in the list for client id
         self.active_sessions.extend(
             [
-                self.open_data.pop(0)["conversations"]
-                for _ in range(self.num_current_clients)
+                (self.client_id + i, self.open_data.pop(0)["conversations"])
+                for i in range(self.num_current_clients)
             ]
         )
-        import ipdb
 
-        ipdb.set_trace()
         # send RPC calls
 
         # decide when to send the next request
