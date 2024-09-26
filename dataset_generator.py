@@ -69,6 +69,8 @@ class ChatDataLoader(object):
             ]
         )
 
+        self.client_id += self.num_current_clients
+
         import ipdb
 
         ipdb.set_trace()
