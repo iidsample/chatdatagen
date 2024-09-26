@@ -41,7 +41,7 @@ class ChatDataLoader(object):
         with open("/users/TA744/sharegpt90k/sg_90k_part1.json", "r") as fopen:
             self.open_data = json.load(fopen)
         # a list which contains active connections
-        self.active_sessions = list()
+        self.active_sessions = dict()
         self.time_delta_next_req = dict()
         self.client_id = 0
         return None
@@ -62,12 +62,11 @@ class ChatDataLoader(object):
         """
 
         # get the conversations in the list for client id
-        self.active_sessions.extend(
-            [
-                (self.client_id + i, self.open_data.pop(0)["conversations"])
-                for i in range(self.num_current_clients)
-            ]
-        )
+
+        self.active_sessions = {
+            self.client_id + i: self.open_data.pop(0)["conversations"]
+            for i in range(self.num_current_clients)
+        }
 
         self.client_id += self.num_current_clients
 
