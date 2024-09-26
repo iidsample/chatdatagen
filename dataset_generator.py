@@ -64,7 +64,7 @@ class ChatDataLoader(object):
         # get the conversations in the list for client id
         self.active_sessions.extend(
             [
-                (self.client_id++, self.open_data.pop(0)["conversations"])
+                self.open_data.pop(0)["conversations"]
                 for _ in range(self.num_current_clients)
             ]
         )
