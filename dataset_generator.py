@@ -1,3 +1,4 @@
+import time
 import json
 import numpy as np
 
@@ -42,19 +43,86 @@ class ChatDataLoader(object):
             self.open_data = json.load(fopen)
         # a list which contains active connections
         self.active_sessions = dict()
-        self.time_delta_next_req = dict()
+        self.next_req_data = dict()
+        self.next_req_time = dict()
+        self.next_info_req_time = dict()
         self.client_id = 0
         return None
 
-    def calculate_time(self):
+    def rpc_calls(self, req_data, client_id):
+        """
+        #TODO:Fill
+        """
+        pass
+
+    def manage_client_request_end(self, client_id):
+        """
+        Called once all messages from the client are sent.
+        Remove the client from active sessions. Draw new number of clients from the distribution.
+        If it's more than existing number of clients we do not add more clients
+        """
+
+        # Remove client with no more
+        del self.active_sessions[client_id]
+
+        # draw new number of clients
+
+        new_num_clients = int(
+            self.normal_distribution.normal(
+                self.mean_concurrent_users, self.deviation_concurrent_users
+            )
+        )
+
+        if new_num_clients > self.num_current_clients:
+            new_clients_to_add = new_num_clients - self.num_current_clients
+            new_clients = {
+                self.client_id + i: self.open_data.pop(0)["conversations"]
+                for i in range(new_clients_to_add)
+            }
+            self.client_id += new_clients_to_add
+
+            self.active_sessions.update(new_clients)
+
+            # TODO: Send first RPC requests for new clients immedia
+            self.rpc_call()
+
+            # TODO: Also find the next
+        return None
+
+    def time_to_next_send(self, client_id):
         """
         ins: the next conversation to send, read speed and type speed
         outs: per conversation time to send next information
         """
-        next_send = [self.active_sessions[idx]]
-        next_recv = [self.active_sessions.pop(0)]
+        try:
+            next_recv = self.active_sessions[client_id].pop(0)
+            next_send = self.active_sessions[client_id].pop(0)
+        except:
+            # no more chat requests for this client
+            sellf.manage_client_request_end(client_id)
 
+        read_speed = self.crps[client_id]
+        type_speed = self.wsps[client_id]
+
+        time_info_request = len(next_recv) / read_speed
+        time_send_request = (len(next_send) / type_speed) + time_info_request
+
+        self.next_req_data[client_id] = next_send
+        self.next_req_time[client_id] = time_send_request
+        self.next_info_req_time[client_id] = time_info_request
         return None
+
+    def subtract_time_dict(self):
+        """
+        Modify dictionary time
+        """
+
+        for key in self.next_req_time:
+            self.next_req_time[key] -= min_time
+        return None
+
+    def rpc_call(self, send_data, client_id):
+        pass
 
     def send_data(self):
         """
@@ -70,11 +138,24 @@ class ChatDataLoader(object):
 
         self.client_id += self.num_current_clients
 
-        import ipdb
+        # send RPC calls for all the new clients immediately,
+        # TODO: Fill in the actual RPC calls
+        for client_id in self.active_sessions.keys():
+            self.time_to_next_send(client_id)
 
-        ipdb.set_trace()
-
-        # send RPC calls
+        # these requests will go without prior information requests
+        while True:
+            # find minimum time to send the request
+            min_time_client = min(self.next_req_time, key=self.next_req_time.get)
+            min_time = self.next_req_time[min_time_client]
+            time.sleep(min_time)
+            self.rpc_call(self.next_req_data[min_time_client], min_time_client)
+            del self.next_req_data[min_time_client]
+            del self.next_req_time[min_time_client]
+            # subtract min time from each other
+            self.subtract_time_dict(min_time)
+            # find next time for the same client
+            self.time_to_next_send(min_time_client)
 
         # decide when to send the next request
         # the logic for this is  - time to read the recieved output from LLM + time to type next query
