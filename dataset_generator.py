@@ -113,6 +113,7 @@ class ChatDataLoader(object):
         ins: the next conversation to send, read speed and type speed
         outs: per conversation time to send next information
         """
+        print(f"Client Status {self.active_sessions[client_id].pop(0)}")
         try:
             next_recv = self.active_sessions[client_id].pop(0)
             assert next_recv["from"] == "gpt"
