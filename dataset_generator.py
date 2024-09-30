@@ -25,9 +25,11 @@ class ChatDataLoader(object):
         # distribution shift
         self.normal_distribution = np.random.default_rng()
         # this is potentially wrong need to switch to random int within a min and max
-        self.num_current_clients = int(
-            self.normal_distribution.normal(
-                self.mean_concurrent_users, self.deviation_concurrent_users
+        self.num_current_clients = abs(
+            int(
+                self.normal_distribution.normal(
+                    self.mean_concurrent_users, self.deviation_concurrent_users
+                )
             )
         )
         # numbers of word read
@@ -91,11 +93,12 @@ class ChatDataLoader(object):
                 for i in range(new_clients_to_add)
             }
             self.client_id += new_clients_to_add
-
+            new_client_ids = list(new_clients.keys())
             self.active_sessions.update(new_clients)
 
             # TODO: Send first RPC requests for new clients immedia
-            self.rpc_call()
+            for client_id in new_client_ids:
+                self.rpc_call(self.active_sessions[client_id].pop(0), client_id)
 
             # TODO: Also find the next
         else:
