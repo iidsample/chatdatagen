@@ -151,7 +151,7 @@ class ChatDataLoader(object):
         # send RPC calls for all the new clients immediately,
         for client_id in self.active_sessions.keys():
             # self.next_req_data[client_id] = self.active_sessions[client_id].pop(0)
-            self.rpc_call(self.active_sessions[client_id].pop(0))
+            self.rpc_call(self.active_sessions[client_id].pop(0), client_id)
 
         for client_id in self.active_sessions.keys():
             self.time_to_next_send(client_id)
