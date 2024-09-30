@@ -51,7 +51,7 @@ class ChatDataLoader(object):
 
     def rpc_calls(self, req_data, client_id):
         """
-        #TODO:Fill
+        #TODO:Fill calls for working through the
         """
         pass
 
@@ -61,13 +61,11 @@ class ChatDataLoader(object):
         Remove the client from active sessions. Draw new number of clients from the distribution.
         If it's more than existing number of clients we do not add more clients
         Right now for simplicity we draw a new number of clients when a client leaves.
-        I am open to ideas how to do it.
+        I am open to ideas how to do it better.
         """
 
         # Remove client with no more
         del self.active_sessions[client_id]
-        del self.next_req_data[client_id]
-        del self.next_info_req_time[client_id]
 
         # draw new number of clients
 
@@ -150,7 +148,10 @@ class ChatDataLoader(object):
         self.client_id += self.num_current_clients
 
         # send RPC calls for all the new clients immediately,
-        # TODO: Fill in the actual RPC calls
+        for client_id in self.active_sessions.keys():
+            # self.next_req_data[client_id] = self.active_sessions[client_id].pop(0)
+            self.rpc_call(self.active_sessions[client_id].pop(0))
+
         for client_id in self.active_sessions.keys():
             self.time_to_next_send(client_id)
 
