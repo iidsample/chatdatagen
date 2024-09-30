@@ -31,6 +31,7 @@ class ChatDataLoader(object):
             )
         )
         # numbers of word read
+        print(f"Num current clients {self.num_current_clients}")
         self.words_read_per_minute = self.normal_distribution.normal(
             self.mean_read_rate, self.deviation_read_rate, size=self.num_current_clients
         )
