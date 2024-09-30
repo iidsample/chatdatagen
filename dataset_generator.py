@@ -156,6 +156,9 @@ class ChatDataLoader(object):
             self.time_to_next_send(client_id)
 
         # these requests will go without prior information requests
+        import ipdb
+
+        ipdb.set_trace()
         while True:
             # find minimum time to send the request
             min_time_client = min(self.next_req_time, key=self.next_req_time.get)
