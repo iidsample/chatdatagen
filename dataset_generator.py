@@ -32,12 +32,20 @@ class ChatDataLoader(object):
         )
         # numbers of word read
         print(f"Num current clients {self.num_current_clients}")
-        self.words_read_per_minute = self.normal_distribution.normal(
-            self.mean_read_rate, self.deviation_read_rate, size=self.num_current_clients
+        self.crps = abs(
+            self.normal_distribution.normal(
+                self.mean_read_rate,
+                self.deviation_read_rate,
+                size=self.num_current_clients,
+            )
         )
         # number of words typed
-        self.words_types_per_minute = self.normal_distribution.normal(
-            self.mean_type_rate, self.deviation_type_rate, size=self.num_current_clients
+        self.wsps = abs(
+            self.normal_distribution.normal(
+                self.mean_type_rate,
+                self.deviation_type_rate,
+                size=self.num_current_clients,
+            )
         )
 
         with open("/users/TA744/sharegpt90k/sg_90k_part1.json", "r") as fopen:
