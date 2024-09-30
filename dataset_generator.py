@@ -119,7 +119,7 @@ class ChatDataLoader(object):
             next_send = self.active_sessions[client_id].pop(0)
             assert next_send["from"] == "human"
         except Exception as e:
-            print(e)
+            print(f"Exception {e}")
             # no more chat requests for this client
             self.manage_client_request_end(client_id)
 
