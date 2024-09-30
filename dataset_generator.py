@@ -60,10 +60,14 @@ class ChatDataLoader(object):
         Called once all messages from the client are sent.
         Remove the client from active sessions. Draw new number of clients from the distribution.
         If it's more than existing number of clients we do not add more clients
+        Right now for simplicity we draw a new number of clients when a client leaves.
+        I am open to ideas how to do it.
         """
 
         # Remove client with no more
         del self.active_sessions[client_id]
+        del self.next_req_data[client_id]
+        del self.next_info_req_time[client_id]
 
         # draw new number of clients
 
@@ -87,6 +91,11 @@ class ChatDataLoader(object):
             self.rpc_call()
 
             # TODO: Also find the next
+        else:
+            # if the number of clients is less than that we don't do anything.
+
+            pass
+
         return None
 
     def time_to_next_send(self, client_id):
@@ -96,16 +105,18 @@ class ChatDataLoader(object):
         """
         try:
             next_recv = self.active_sessions[client_id].pop(0)
+            assert next_recv["from"] == "gpt"
             next_send = self.active_sessions[client_id].pop(0)
+            assert next_send["from"] == "human"
         except:
             # no more chat requests for this client
-            sellf.manage_client_request_end(client_id)
+            self.manage_client_request_end(client_id)
 
         read_speed = self.crps[client_id]
         type_speed = self.wsps[client_id]
 
-        time_info_request = len(next_recv) / read_speed
-        time_send_request = (len(next_send) / type_speed) + time_info_request
+        time_info_request = len(next_recv["value"]) / read_speed
+        time_send_request = (len(next_send["value"]) / type_speed) + time_info_request
 
         self.next_req_data[client_id] = next_send
         self.next_req_time[client_id] = time_send_request
