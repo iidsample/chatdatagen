@@ -134,7 +134,7 @@ class ChatDataLoader(object):
         self.next_info_req_time[client_id] = time_info_request
         return None
 
-    def subtract_time_dict(self):
+    def subtract_time_dict(self, min_time):
         """
         Modify dictionary time
         """
