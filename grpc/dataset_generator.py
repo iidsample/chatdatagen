@@ -72,7 +72,7 @@ class ChatDataLoader(object):
 
     async def rpc_call(self, req_data, client_id):
         """
-        #TODO:Fill calls for working through the
+        RPC calls for sending requests to the server
         """
         async with grpc.aio.insecure_channel("localhost:50051") as channel:
             stub = chat_pb2_grpc.LlmEngineStub(channel)
@@ -178,8 +178,15 @@ class ChatDataLoader(object):
 
         return None
 
-    # def rpc_call(self, send_data, client_id):
-    #     pass
+    async def info_req_call(self, client_id):
+        async with grpc.aio.insecure_channel("localhost:50051") as channel:
+            stub = chat_pb2_grpc.LlmEngineStub(channel)
+            # input = req_data["value"]
+            # print("This is the input sent: ",input)
+            
+            request = chat_pb2.InfoReq(session_id=int(client_id))
+            response = await stub.processInfoReq(request)
+            print("Receive response: ", response.success)
 
     def blocking_sleep(self, sleep_time):
         time.sleep(sleep_time)
@@ -222,14 +229,16 @@ class ChatDataLoader(object):
             min_time = self.next_req_time[min_time_client]
             await asyncio.to_thread(self.blocking_sleep, min_time)
             if "info" in min_time_client:
-                # TODO: Add how to deal with inference request haha
-                pass
+                task = asyncio.create_task(
+                    self.info_req_call(min_time_client[:-5])
+                )
+                self.task_list.append(task)
             else:
                 task = asyncio.create_task(
                     self.rpc_call(self.next_req_data[min_time_client], min_time_client)
                 )
+                self.task_list.append(task)
 
-            # self.rpc_call(self.next_req_data[min_time_client], min_time_client)
             del self.next_req_data[min_time_client]
             del self.next_req_time[min_time_client]
             # subtract min time from each other
