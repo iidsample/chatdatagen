@@ -2,6 +2,12 @@ import time
 import json
 import numpy as np
 
+import asyncio
+import grpc
+import chat_pb2
+import chat_pb2_grpc
+import threading
+
 
 class ChatDataLoader(object):
     def __init__(
@@ -49,8 +55,9 @@ class ChatDataLoader(object):
                 size=self.num_current_clients,
             )
         )
-
-        with open("/users/TA744/sharegpt90k/sg_90k_part1.json", "r") as fopen:
+        # PATH = "/users/TA744/sharegpt90k/sg_90k_part1.json"
+        PATH = "/home/anyong/Downloads/sg_90k_part1.json"
+        with open(PATH, "r") as fopen:
             self.open_data = json.load(fopen)
         # a list which contains active connections
         self.active_sessions = dict()
@@ -58,13 +65,27 @@ class ChatDataLoader(object):
         self.next_req_time = dict()
         self.next_info_req_time = dict()
         self.client_id = 0
+        self.task_list = []
+        self.request_id_counter = 0
+        self.counter_lock = threading.Lock()
         return None
 
-    def rpc_calls(self, req_data, client_id):
+    async def rpc_call(self, req_data, client_id):
         """
         #TODO:Fill calls for working through the
         """
-        pass
+        async with grpc.aio.insecure_channel("localhost:50051") as channel:
+            stub = chat_pb2_grpc.LlmEngineStub(channel)
+            input = req_data["value"]
+            # print("This is the input sent: ",input)
+            with self.counter_lock:
+                self.request_id_counter += 1
+                new_req_id = str(self.request_id_counter)
+            request = chat_pb2.ChatReq(
+                prompt=input, request_id=new_req_id, session_id=client_id
+            )
+            response = await stub.processChatReq(request)
+            print("Receive response: ", response.answer)
 
     def manage_client_request_end(self, client_id):
         """
@@ -98,7 +119,11 @@ class ChatDataLoader(object):
 
             # TODO: Send first RPC requests for new clients immedia
             for client_id in new_client_ids:
-                self.rpc_call(self.active_sessions[client_id].pop(0), client_id)
+                task = asyncio.create_task(
+                    self.rpc_call(self.active_sessions[client_id].pop(0), client_id)
+                )
+                self.task_list.append(task)
+                # self.rpc_call(self.active_sessions[client_id].pop(0), client_id)
 
             # TODO: Also find the next
         else:
@@ -113,8 +138,14 @@ class ChatDataLoader(object):
         ins: the next conversation to send, read speed and type speed
         outs: per conversation time to send next information
         """
-        print(f"Client Status {self.active_sessions[client_id]}")
+        print(f"Client Status {len(self.active_sessions[client_id])}")
+        next_recv = None
+        next_send = None
         try:
+            print(
+                "The length of self.active_sessions[client_id]: ",
+                len(self.active_sessions[client_id]),
+            )
             next_recv = self.active_sessions[client_id].pop(0)
             assert next_recv["from"] == "gpt"
             next_send = self.active_sessions[client_id].pop(0)
@@ -123,6 +154,7 @@ class ChatDataLoader(object):
             print(f"Exception {e}")
             # no more chat requests for this client
             self.manage_client_request_end(client_id)
+            return None
 
         read_speed = self.crps[client_id]
         type_speed = self.wsps[client_id]
@@ -132,7 +164,8 @@ class ChatDataLoader(object):
 
         self.next_req_data[client_id] = next_send
         self.next_req_time[client_id] = time_send_request
-        self.next_info_req_time[client_id] = time_info_request
+        self.next_req_time[f"{client_id}_info"] = time_info_request
+        # self.next_info_req_time[client_id] = time_info_request
         return None
 
     def subtract_time_dict(self, min_time):
@@ -142,12 +175,16 @@ class ChatDataLoader(object):
 
         for key in self.next_req_time:
             self.next_req_time[key] -= min_time
+
         return None
 
-    def rpc_call(self, send_data, client_id):
-        pass
+    # def rpc_call(self, send_data, client_id):
+    #     pass
 
-    def send_data(self):
+    def blocking_sleep(self, sleep_time):
+        time.sleep(sleep_time)
+
+    async def send_data(self):
         """
         Based on number of users and prompt size decide.
         """
@@ -164,10 +201,16 @@ class ChatDataLoader(object):
         # send RPC calls for all the new clients immediately,
         for client_id in self.active_sessions.keys():
             # self.next_req_data[client_id] = self.active_sessions[client_id].pop(0)
-            self.rpc_call(self.active_sessions[client_id].pop(0), client_id)
+            task = asyncio.create_task(
+                self.rpc_call(self.active_sessions[client_id].pop(0), client_id)
+            )
+            self.task_list.append(task)
+            # self.rpc_call(self.active_sessions[client_id].pop(0), client_id)
 
-        for client_id in self.active_sessions.keys():
-            self.time_to_next_send(client_id)
+        # convert dict keys to list to avoid runtime error
+        for client_id in list(self.active_sessions):
+            if self.active_sessions.get(client_id):
+                self.time_to_next_send(client_id)
 
         # these requests will go without prior information requests
         import ipdb
@@ -177,8 +220,16 @@ class ChatDataLoader(object):
             # find minimum time to send the request
             min_time_client = min(self.next_req_time, key=self.next_req_time.get)
             min_time = self.next_req_time[min_time_client]
-            time.sleep(min_time)
-            self.rpc_call(self.next_req_data[min_time_client], min_time_client)
+            await asyncio.to_thread(self.blocking_sleep, min_time)
+            if "info" in min_time_client:
+                # TODO: Add how to deal with inference request haha
+                pass
+            else:
+                task = asyncio.create_task(
+                    self.rpc_call(self.next_req_data[min_time_client], min_time_client)
+                )
+
+            # self.rpc_call(self.next_req_data[min_time_client], min_time_client)
             del self.next_req_data[min_time_client]
             del self.next_req_time[min_time_client]
             # subtract min time from each other
@@ -192,4 +243,4 @@ class ChatDataLoader(object):
 
 if __name__ == "__main__":
     dataloader = ChatDataLoader(10, 10, 10, 10, 10, 10)
-    dataloader.send_data()
+    asyncio.run(dataloader.send_data())
