@@ -4,6 +4,7 @@ import logging
 import grpc
 import chat_pb2
 import chat_pb2_grpc
+import pdb
 
 import os
 
@@ -31,6 +32,7 @@ class LlmEngine(chat_pb2_grpc.LlmEngineServicer):
         )
     )
     async def processChatReq(self, request: chat_pb2.ChatReq, context: grpc.aio.ServicerContext):
+        print(f"receive Request with session id {request.session_id}, and request id {request.request_id}")
         results_generator = self.engine.generate(
         request.prompt,
         vllm.SamplingParams(temperature=0.8, top_p=0.95, max_tokens=2048, min_tokens=20,),
@@ -62,5 +64,5 @@ async def serve() -> None:
 
 
 if __name__ == "__main__":
-    logging.basicConfig(level=logging.INFO)
+    logging.basicConfig(level=logging.DEBUG)
     asyncio.run(serve())
