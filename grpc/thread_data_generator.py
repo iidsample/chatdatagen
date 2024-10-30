@@ -42,7 +42,7 @@ class ChatDataLoader(object):
         #     )
         # )
         # simplify for checking correctness and debugging
-        self.num_current_clients = 10
+        self.num_current_clients = 15
         # numbers of word read
         print(f"Num current clients {self.num_current_clients}")
         self.crps = abs(
@@ -120,96 +120,6 @@ class ChatDataLoader(object):
         future.result()    
 
     
-    def manage_client_request_end_add_one(self, client_id):
-        """
-        Called once all messages from the client are sent.
-        Remove the client from active sessions. Draw new number of clients from the distribution.
-        If it's more than existing number of clients we do not add more clients
-        Right now for simplicity we draw a new number of clients when a client leaves.
-        I am open to ideas how to do it better.
-        """
-
-        # Remove client with no more
-        del self.active_sessions[client_id]
-
-        if(random.random()<self.continue_task):
-            new_clients_to_add = 1
-            new_clients = {
-                # may be set to max(client_id) + i
-                # max_key + i: self.open_data.pop(0)["conversations"]
-                self.client_id + i: self.open_data.pop(0)["conversations"]
-                for i in range(new_clients_to_add)
-            }
-            self.client_id += new_clients_to_add
-            new_client_ids = list(new_clients.keys())
-            self.active_sessions.update(new_clients)
-
-            # TODO: Send first RPC requests for new clients immedia
-            loop = asyncio.get_running_loop()
-            for client_id in new_client_ids:
-                threading.Thread(target=self.thread_rpc_call, args=(loop,self.active_sessions[client_id].pop(0), client_id)).start()
-                # task = asyncio.create_task(
-                #     self.rpc_call(self.active_sessions[client_id].pop(0), client_id)
-                # )
-                # self.task_list.append(task)
-                # self.rpc_call(self.active_sessions[client_id].pop(0), client_id)
-
-            # TODO: Also find the next
-            for client_id in list(new_clients):
-                if new_clients.get(client_id):
-                    self.time_to_next_send(client_id)
-
-        return None
-
-    def time_to_next_send(self, client_id):
-        """
-        ins: the next conversation to send, read speed and type speed
-        outs: per conversation time to send next information
-        """
-        # print(f"Client Status {len(self.active_sessions[client_id])}")
-        next_recv = None
-        next_send = None
-        try:
-            print(
-                f"The length of self.active_sessions[{client_id}]: ",
-                len(self.active_sessions[client_id]),
-            )
-            next_recv = self.active_sessions[client_id].pop(0)
-            assert next_recv["from"] == "gpt"
-            next_send = self.active_sessions[client_id].pop(0)
-            assert next_send["from"] == "human"
-        except Exception as e:
-            print(f"Exception {e}")
-            # no more chat requests for this client
-            self.manage_client_request_end_add_one(client_id)
-            return None
-
-        # read_speed = self.crps[client_id]
-        # type_speed = self.wsps[client_id]
-        read_speed = self.mean_read_rate
-        type_speed = self.mean_type_rate
-
-        time_info_request = len(next_recv["value"]) / read_speed
-        print("time to next Info req: ",time_info_request)
-        time_send_request = (len(next_send["value"]) / type_speed) + time_info_request
-        print("time to next Send req: ",time_send_request)
-
-        self.next_req_data[str(client_id)] = next_send
-        self.next_req_time[str(client_id)] = time_send_request
-        self.next_req_time[f"{client_id}_info"] = time_info_request
-        # self.next_info_req_time[client_id] = time_info_request
-        return None
-
-    def subtract_time_dict(self, min_time):
-        """
-        Modify dictionary time
-        """
-
-        for key in self.next_req_time:
-            self.next_req_time[key] -= min_time
-
-        return None
-
     async def info_req_call(self, client_id):
         async with grpc.aio.insecure_channel("localhost:50051") as channel:
             print(f"sending info request with session id {client_id}")
@@ -260,7 +170,8 @@ class ChatDataLoader(object):
             coro = self.rpc_call(req_data["value"], cur_client_id, is_last=is_last)
             future = asyncio.run_coroutine_threadsafe(coro, loop)
             future.result()
-            req_data = next_send
+            # if(not is_last)
+            #     req_data = next_send
             # TODO Need to be changed to match the actually returned token num
             interval_info_req = 5
             # try:
@@ -276,6 +187,7 @@ class ChatDataLoader(object):
                 
             
             if(not is_last):
+                req_data = next_send
                 coro = self.sleep_time(interval_info_req)
                 future = asyncio.run_coroutine_threadsafe(coro, loop)
                 future.result()
