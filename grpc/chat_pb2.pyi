@@ -5,14 +5,16 @@ from typing import ClassVar as _ClassVar, Optional as _Optional
 DESCRIPTOR: _descriptor.FileDescriptor
 
 class ChatReq(_message.Message):
-    __slots__ = ("prompt", "session_id", "request_id")
+    __slots__ = ("prompt", "session_id", "request_id", "is_last")
     PROMPT_FIELD_NUMBER: _ClassVar[int]
     SESSION_ID_FIELD_NUMBER: _ClassVar[int]
     REQUEST_ID_FIELD_NUMBER: _ClassVar[int]
+    IS_LAST_FIELD_NUMBER: _ClassVar[int]
     prompt: str
     session_id: int
     request_id: str
-    def __init__(self, prompt: _Optional[str] = ..., session_id: _Optional[int] = ..., request_id: _Optional[str] = ...) -> None: ...
+    is_last: bool
+    def __init__(self, prompt: _Optional[str] = ..., session_id: _Optional[int] = ..., request_id: _Optional[str] = ..., is_last: bool = ...) -> None: ...
 
 class InfoReq(_message.Message):
     __slots__ = ("session_id",)

@@ -11,7 +11,6 @@ import chat_pb2_grpc
 import threading
 
 
-
 class ChatDataLoader(object):
     def __init__(
         self,
@@ -74,28 +73,26 @@ class ChatDataLoader(object):
         self.task_list = []
         self.request_id_counter = 0
         self.counter_lock = threading.Lock()
+        self.dict_lock = threading.Lock()
+        self.session_counter = 0
+        self.interval_between_sessions = 3
         return None
 
-    async def rpc_call(self, req_data, client_id):
+    async def rpc_call(self, req_data, client_id, is_last):
         """
         RPC calls for sending requests to the server
         """
         async with grpc.aio.insecure_channel("localhost:50051") as channel:
             
             stub = chat_pb2_grpc.LlmEngineStub(channel)
-            input = req_data["value"]
+            input = req_data
             # print("This is the input sent: ",input)
             new_req_id = None
             with self.counter_lock:
                 self.request_id_counter += 1
                 new_req_id = str(self.request_id_counter)
             print(f"Ready to send request with id {new_req_id}, and session id {client_id} with input {input[:100]}!")
-            is_last = True
-            if (client_id in self.active_sessions):
-                is_last = False
-            else:
-                if(str(client_id) in self.next_req_data):
-                    is_last = False
+            
             request = chat_pb2.ChatReq(
                 prompt=input, request_id=new_req_id, session_id=int(client_id), is_last=is_last
             )
@@ -122,57 +119,6 @@ class ChatDataLoader(object):
         future = asyncio.run_coroutine_threadsafe(coro, loop)
         future.result()    
 
-    def manage_client_request_end(self, client_id):
-        """
-        Called once all messages from the client are sent.
-        Remove the client from active sessions. Draw new number of clients from the distribution.
-        If it's more than existing number of clients we do not add more clients
-        Right now for simplicity we draw a new number of clients when a client leaves.
-        I am open to ideas how to do it better.
-        """
-
-        # Remove client with no more
-        del self.active_sessions[client_id]
-
-        # draw new number of clients
-
-        max_key = max(self.active_sessions)
-        new_num_clients = int(
-            self.normal_distribution.normal(
-                self.mean_concurrent_users, self.deviation_concurrent_users
-            )
-        )
-
-        if new_num_clients > self.num_current_clients:
-            new_clients_to_add = new_num_clients - self.num_current_clients
-            new_clients = {
-                # may be set to max(client_id) + i
-                # max_key + i: self.open_data.pop(0)["conversations"]
-                self.client_id + i: self.open_data.pop(0)["conversations"]
-                for i in range(new_clients_to_add)
-            }
-            self.client_id += new_clients_to_add
-            new_client_ids = list(new_clients.keys())
-            self.active_sessions.update(new_clients)
-
-            # TODO: Send first RPC requests for new clients immedia
-            loop = asyncio.get_running_loop()
-            
-            for client_id in new_client_ids:
-                threading.Thread(target=self.thread_rpc_call, args=(loop,self.active_sessions[client_id].pop(0), client_id)).start()
-                # task = asyncio.create_task(
-                #     self.rpc_call(self.active_sessions[client_id].pop(0), client_id)
-                # )
-                # self.task_list.append(task)
-                # self.rpc_call(self.active_sessions[client_id].pop(0), client_id)
-
-            # TODO: Also find the next
-        else:
-            # if the number of clients is less than that we don't do anything.
-
-            pass
-
-        return None
     
     def manage_client_request_end_add_one(self, client_id):
         """
@@ -200,8 +146,8 @@ class ChatDataLoader(object):
 
             # TODO: Send first RPC requests for new clients immedia
             loop = asyncio.get_running_loop()
-            for new_client_id in new_client_ids:
-                threading.Thread(target=self.thread_rpc_call, args=(loop,self.active_sessions[new_client_id].pop(0), new_client_id)).start()
+            for client_id in new_client_ids:
+                threading.Thread(target=self.thread_rpc_call, args=(loop,self.active_sessions[client_id].pop(0), client_id)).start()
                 # task = asyncio.create_task(
                 #     self.rpc_call(self.active_sessions[client_id].pop(0), client_id)
                 # )
@@ -209,9 +155,9 @@ class ChatDataLoader(object):
                 # self.rpc_call(self.active_sessions[client_id].pop(0), client_id)
 
             # TODO: Also find the next
-            for new_client_id in list(new_clients):
-                if new_clients.get(new_client_id):
-                    self.time_to_next_send(new_client_id)
+            for client_id in list(new_clients):
+                if new_clients.get(client_id):
+                    self.time_to_next_send(client_id)
 
         return None
 
@@ -275,83 +221,92 @@ class ChatDataLoader(object):
             response = await stub.processInfoReq(request)
             print("Receive response: ", response.success)
 
-    def blocking_sleep(self, sleep_time):
-        time.sleep(sleep_time)
+        
+    async def sleep_time(self, sleep_time):
+        await asyncio.sleep(sleep_time)
+        
+    def run_thread_loop(self, loop, rank_client):
+        # try:
+        #     result = await asyncio.wait_for(long_running_task(), timeout=5.0)
+        #     print("Task completed successfully:", result)
+        # except asyncio.TimeoutError:
+        #     print("Task timed out after 5 seconds.")
+        input_data = None
+        interval_chat_req = 0
+        interval_info_req = 0
+        cur_client_id = rank_client
+        is_last = True
+        with self.dict_lock:
+            input_data = self.open_data.pop(0)["conversations"]
+            cur_client_id = self.session_counter
+            self.session_counter +=1
+        req_data = input_data.pop(0)
+        assert req_data["from"] == "human"
+        while True:
+            is_last = True
+            coro = self.sleep_time(interval_chat_req)
+            future = asyncio.run_coroutine_threadsafe(coro, loop)
+            future.result()
+            # req_data = input_data.pop(0)
+            # assert req_data["from"] == "human"
+            if len(input_data)>1:
+                # there are at least two more
+                is_last = False
+                next_recv = input_data.pop(0)
+                assert next_recv["from"] == "gpt"
+                next_send = input_data.pop(0)
+                assert next_send["from"] == "human"
+                interval_chat_req = len(next_send["value"])/self.mean_type_rate
+            coro = self.rpc_call(req_data["value"], cur_client_id, is_last=is_last)
+            future = asyncio.run_coroutine_threadsafe(coro, loop)
+            future.result()
+            req_data = next_send
+            # TODO Need to be changed to match the actually returned token num
+            interval_info_req = 5
+            # try:
+                
+            #     next_recv = self.active_sessions[client_id].pop(0)
+            #     assert next_recv["from"] == "gpt"
+            #     next_send = self.active_sessions[client_id].pop(0)
+            #     assert next_send["from"] == "human"
+            # except Exception as e:
+            #     pass
+            # if len(input_data)> 1:
+                
+                
+            
+            if(not is_last):
+                coro = self.sleep_time(interval_info_req)
+                future = asyncio.run_coroutine_threadsafe(coro, loop)
+                future.result()
+                coro = self.info_req_call(cur_client_id)
+                future = asyncio.run_coroutine_threadsafe(coro, loop)
+                future.result()
+            else:
+                # need to handle processing a new list from dict
+                with self.dict_lock:
+                    input_data = self.open_data.pop(0)["conversations"]
+                    cur_client_id = self.session_counter
+                    self.session_counter +=1
+                req_data = input_data.pop(0)
+                assert req_data["from"] == "human"
+                coro = self.sleep_time(self.interval_between_sessions)
+                future = asyncio.run_coroutine_threadsafe(coro, loop)
+                future.result()
+            
 
     async def send_data(self):
         """
         Based on number of users and prompt size decide.
         """
+        loop = asyncio.get_running_loop()
+        for single_client in range(self.num_current_clients):
+            threading.Thread(target=self.run_thread_loop, args=(loop,single_client)).start()
 
         # get the conversations in the list for client id
 
-        self.active_sessions = {
-            self.client_id + i: self.open_data.pop(0)["conversations"]
-            for i in range(self.num_current_clients)
-        }
-
-        self.client_id += self.num_current_clients
-        loop = asyncio.get_running_loop()
-
-        # send RPC calls for all the new clients immediately,
-        for client_id in self.active_sessions.keys():
-            threading.Thread(target=self.thread_rpc_call, args=(loop,self.active_sessions[client_id].pop(0), client_id)).start()
-            # self.next_req_data[client_id] = self.active_sessions[client_id].pop(0)
-            # task = asyncio.create_task(
-            #     self.rpc_call(self.active_sessions[client_id].pop(0), client_id)
-            # )
-            # self.task_list.append(task)
-            # self.rpc_call(self.active_sessions[client_id].pop(0), client_id)
-
-        # convert dict keys to list to avoid runtime error
-        for client_id in list(self.active_sessions):
-            if self.active_sessions.get(client_id):
-                self.time_to_next_send(client_id)
-
-        # these requests will go without prior information requests
-        # import ipdb
-
-        # ipdb.set_trace()
-        while True:
-            # find minimum time to send the request
-            if(len(self.next_req_time)==0 and len(self.next_req_data)==0):
-                break
-            min_time_client = min(self.next_req_time, key=self.next_req_time.get)
-            min_time_client = str(min_time_client)
-            min_time = self.next_req_time[min_time_client]
-            # print(f"time before calling blocking sleep: {time.time()}, need to sleep for {min_time}")
-            # await asyncio.to_thread(self.blocking_sleep, min_time)
-            await asyncio.sleep(min_time)
-            # print(f"time after calling blocking sleep: {time.time()}")
-            if "info" in min_time_client:
-                threading.Thread(target=self.thread_info_req, args=(loop, min_time_client[:-5])).start()
-                # task = asyncio.create_task(
-                #     self.info_req_call(min_time_client[:-5])
-                # )
-                # self.task_list.append(task)
-            else:
-                if(self.next_req_data.get(min_time_client)==None):
-                    print("Does not found correspondent key in next_req_data, break the loop!")
-                    break
-                threading.Thread(target=self.thread_rpc_call, args=(loop,self.next_req_data[min_time_client],min_time_client)).start()
-                # task = asyncio.create_task(
-                #     self.rpc_call(self.next_req_data[min_time_client], min_time_client)
-                # )
-                # self.task_list.append(task)
-
-            if("info" not in min_time_client):
-                del self.next_req_data[min_time_client]
-            del self.next_req_time[min_time_client]
-            # subtract min time from each other
-            self.subtract_time_dict(min_time)
-            # find next time for the same client
-            if("info" not in min_time_client):
-                self.time_to_next_send(int(min_time_client))
-
-        # decide when to send the next request
-        # the logic for this is  - time to read the recieved output from LLM + time to type next query
-
+        await asyncio.sleep(300)
 
 if __name__ == "__main__":
-    dataloader = ChatDataLoader(10, 5, 25, 5, 30, 5)
+    dataloader = ChatDataLoader(10, 5, 25, 5, 20, 5)
     asyncio.run(dataloader.send_data())

@@ -17,6 +17,8 @@ import time
 import uuid
 from typing import Optional
 
+# os.environ['CUDA_LAUNCH_BLOCKING'] = '1'
+
 
 MODEL_PATH = '~/personal/projects/vllm_inference/model_data/opt-1.3b/'
 
@@ -32,7 +34,8 @@ class LlmEngine(chat_pb2_grpc.LlmEngineServicer):
         )
     )
     async def processChatReq(self, request: chat_pb2.ChatReq, context: grpc.aio.ServicerContext):
-        print(f"receive Request with session id {request.session_id}, and request id {request.request_id}")
+        print(f"receive Request with session id {request.session_id}, and request id {request.request_id} with prompt length {len(request.prompt)}")
+        self.engine.engine.scheduler[0].is_finish_dict[request.session_id] = request.is_last
         results_generator = self.engine.generate(
         request.prompt,
         vllm.SamplingParams(temperature=0.8, top_p=0.95, max_tokens=2048, min_tokens=20,),
