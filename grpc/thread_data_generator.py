@@ -201,6 +201,10 @@ class ChatDataLoader(object):
                     cur_client_id = self.session_counter
                     self.session_counter +=1
                 req_data = input_data.pop(0)
+                if(req_data["from"]!= "human"):
+                    print(f"1: {req_data['from']}")
+                    for i in range(len(input_data)):
+                        print(f"{i+2}: {input_data[i]['from']}")
                 assert req_data["from"] == "human"
                 coro = self.sleep_time(self.interval_between_sessions)
                 future = asyncio.run_coroutine_threadsafe(coro, loop)
