@@ -18,7 +18,7 @@ import uuid
 from typing import Optional
 
 # os.environ['CUDA_LAUNCH_BLOCKING'] = '1'
-
+os.environ['CUDA_VISIBLE_DEVICES'] = '0'
 
 MODEL_PATH = '~/personal/projects/vllm_inference/model_data/opt-1.3b/'
 
@@ -30,7 +30,8 @@ class LlmEngine(chat_pb2_grpc.LlmEngineServicer):
             model=model_dir,
             enforce_eager=True,
             trust_remote_code=True,
-            max_model_len=2048,))
+            max_model_len=2048,
+            gpu_memory_utilization=0.6))
         self.output_len = []
         self.ttft_list = []
         self.run_time = []
@@ -98,6 +99,7 @@ async def serve() -> None:
         print(f"time to first token list: {engine.ttft_list}")
         print(f"Run time list: {engine.run_time}")
         print(f"Last for {time.time()- engine.start_time}")
+        print(f"scheduler time:  {time.time()- engine.engine.engine.scheduler[0].self.time_in_scheduler}")
         await server.stop(0)  # Stop the server immediately
     
     

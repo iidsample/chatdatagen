@@ -4,6 +4,8 @@ import numpy as np
 import random
 import pdb
 
+from transformers import PreTrainedTokenizerBase, AutoTokenizer
+
 import asyncio
 import grpc
 import chat_pb2
@@ -42,7 +44,7 @@ class ChatDataLoader(object):
         #     )
         # )
         # simplify for checking correctness and debugging
-        self.num_current_clients = 15
+        self.num_current_clients = 25
         # numbers of word read
         print(f"Num current clients {self.num_current_clients}")
         self.crps = abs(
@@ -62,6 +64,7 @@ class ChatDataLoader(object):
         )
         # PATH = "/users/TA744/sharegpt90k/sg_90k_part1.json"
         PATH = "/home/anyong/Downloads/sg_90k_part1.json"
+        MODEL_PATH = '/home/anyong/personal/projects/vllm_inference/model_data/opt-1.3b/'
         with open(PATH, "r") as fopen:
             self.open_data = json.load(fopen)
         # a list which contains active connections
@@ -72,8 +75,10 @@ class ChatDataLoader(object):
         self.client_id = 0
         self.task_list = []
         self.request_id_counter = 0
+        self.tokenizer = AutoTokenizer.from_pretrained(MODEL_PATH, trust_remote_code=True)
         self.counter_lock = threading.Lock()
         self.dict_lock = threading.Lock()
+        self.tokenizer_lock = threading.Lock()
         self.session_counter = 0
         self.interval_between_sessions = 3
         return None
@@ -91,14 +96,16 @@ class ChatDataLoader(object):
             with self.counter_lock:
                 self.request_id_counter += 1
                 new_req_id = str(self.request_id_counter)
-            print(f"Ready to send request with id {new_req_id}, and session id {client_id} with input {input[:100]}!")
+            print(f"Ready to send request with id {new_req_id}, and session id {client_id} with input length {len(input)} and content: {input[:100]}!")
             
             request = chat_pb2.ChatReq(
                 prompt=input, request_id=new_req_id, session_id=int(client_id), is_last=is_last
             )
             # pdb.set_trace()
             response = await stub.processChatReq(request)
-            print("Receive llm text: ", response.answer[:100])
+            answer_len = len(response.answer)
+            print( "Receive llm text: ",response.answer[:50])
+            return answer_len
             # pdb.set_trace()
             
     def thread_rpc_call(self, loop, req_data, client_id):
@@ -113,6 +120,11 @@ class ChatDataLoader(object):
         future.result()
         # report a message
         # print('thread done')
+        
+    def exceed_length_limit(self, req_data):
+        if(req_data['from']=='human' and len(self.tokenizer.encode(req_data['value']))> 2032):
+            return True
+        return False
         
     def thread_info_req(self, loop, client_id):
         coro = self.info_req_call(client_id=client_id)
@@ -147,9 +159,20 @@ class ChatDataLoader(object):
         cur_client_id = rank_client
         is_last = True
         with self.dict_lock:
-            input_data = self.open_data.pop(0)["conversations"]
+            while(True):
+                input_data = self.open_data.pop(0)["conversations"]
+                result = any(self.exceed_length_limit(chat_data) for chat_data in input_data)
+                if(result):
+                    continue
+                if(input_data[0]['from']=="human"):
+                    break
             cur_client_id = self.session_counter
             self.session_counter +=1
+            
+        # with self.dict_lock:
+        #     input_data = self.open_data.pop(0)["conversations"]
+        #     cur_client_id = self.session_counter
+        #     self.session_counter +=1
         req_data = input_data.pop(0)
         assert req_data["from"] == "human"
         while True:
@@ -166,14 +189,14 @@ class ChatDataLoader(object):
                 assert next_recv["from"] == "gpt"
                 next_send = input_data.pop(0)
                 assert next_send["from"] == "human"
-                interval_chat_req = len(next_send["value"])/self.mean_type_rate
+                interval_chat_req = min(len(next_send["value"])/self.mean_type_rate,5)
             coro = self.rpc_call(req_data["value"], cur_client_id, is_last=is_last)
             future = asyncio.run_coroutine_threadsafe(coro, loop)
-            future.result()
+            answer_len = future.result()
             # if(not is_last)
             #     req_data = next_send
             # TODO Need to be changed to match the actually returned token num
-            interval_info_req = 5
+            interval_info_req = min(answer_len/self.mean_read_rate, 5)
             # try:
                 
             #     next_recv = self.active_sessions[client_id].pop(0)
@@ -197,14 +220,22 @@ class ChatDataLoader(object):
             else:
                 # need to handle processing a new list from dict
                 with self.dict_lock:
-                    input_data = self.open_data.pop(0)["conversations"]
+                    while(True):
+                        input_data = self.open_data.pop(0)["conversations"]
+                        result = False
+                        with self.tokenizer_lock:
+                            result = any(self.exceed_length_limit(chat_data) for chat_data in input_data)
+                        if(result):
+                            continue
+                        if(input_data[0]['from']=="human"):
+                            break
                     cur_client_id = self.session_counter
                     self.session_counter +=1
                 req_data = input_data.pop(0)
-                if(req_data["from"]!= "human"):
-                    print(f"1: {req_data['from']}")
-                    for i in range(len(input_data)):
-                        print(f"{i+2}: {input_data[i]['from']}")
+                # if(req_data["from"]!= "human"):
+                #     print(f"1: {req_data['from']}")
+                #     for i in range(len(input_data)):
+                #         print(f"{i+2}: {input_data[i]['from']}")
                 assert req_data["from"] == "human"
                 coro = self.sleep_time(self.interval_between_sessions)
                 future = asyncio.run_coroutine_threadsafe(coro, loop)
